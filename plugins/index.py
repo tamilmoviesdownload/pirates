@@ -126,7 +126,7 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot, skip):
                     continue
                 media.caption = message.caption
                 file_name = re.sub(r"@\w+|(_|\-|\.|\+)", " ", str(media.file_name))
-                sts = await save_file(media)
+                sts = await save_file(media, message.chat.id, message.id)
                 if sts == 'suc':
                     total_files += 1
                 elif sts == 'dup':
