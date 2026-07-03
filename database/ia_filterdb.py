@@ -108,21 +108,49 @@ async def trigger_update_if_new(title, year):
 
 # database/ia_filterdb.py
 
+# database/ia_filterdb.py
+
 async def save_file(media, chat_id, message_id):
-    # We use a combined string or the message_id as the unique ID
-    # but storing chat_id and message_id is the key.
+    # 1. Basic cleaning of filename and caption
     file_name = re.sub(r"@\w+|(_|\-|\.|\+)", " ", str(media.file_name))
-    file_caption = re.sub(r"@\w+|(_|\-|\.|\+)", " ", str(media.caption))
-    
+    caption = str(media.caption) if media.caption else ""
+    file_caption = re.sub(r"@\w+|(_|\-|\.|\+)", " ", caption)
+
+    # --- NEW: AUDIO SCRAPING LOGIC ---
+    audio_languages = ""
+    if caption:
+        # Strip HTML tags (like <b>, <code>) to make regex more reliable
+        clean_cap = re.sub(r'<[^>]+>', '', caption)
+        
+        # Look for "Audio:" followed by the languages
+        # This matches "Audio: Tamil, Hindi" or "🔊 Audio: English"
+        match = re.search(r"Audio:\s*(.*)", clean_cap, re.IGNORECASE)
+        if match:
+            extracted_audio = match.group(1).strip()
+            
+            # If the caption has "Subtitle" after Audio, we cut it off there
+            # to avoid grabbing the subtitle list as well
+            if "Subtitle" in extracted_audio:
+                extracted_audio = extracted_audio.split("Subtitle")[0].strip()
+            
+            # Remove any trailing emojis (like 💬) that might be attached
+            extracted_audio = re.sub(r"[💬💬📌🎬⏳🔊]", "", extracted_audio).strip()
+            audio_languages = extracted_audio
+
+    # Append audio languages to the indexed file_name so it's searchable
+    if audio_languages:
+        # We add it to the name variable used for the DB entry
+        file_name = f"{file_name} {audio_languages}"
+    # ---------------------------------
+
     document = {
         'file_name': file_name,
         'file_size': media.file_size,
         'caption': file_caption,
-        'chat_id': chat_id,      # Store the source channel ID
-        'message_id': message_id # Store the source message ID
+        'chat_id': chat_id,
+        'message_id': message_id
     }
     
-    # We can use a custom string as _id to prevent duplicates across the same channel
     document['_id'] = f"{chat_id}_{message_id}"
     
     data = PTN.parse(file_name)
@@ -138,7 +166,6 @@ async def save_file(media, chat_id, message_id):
         return 'dup'
     except Exception as e:
         logger.error(f"Error saving file: {e}")
-        # Fallback to second collection if configured...
         return 'err'
         
 async def get_search_results(query):
