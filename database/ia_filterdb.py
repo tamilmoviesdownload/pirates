@@ -110,45 +110,40 @@ async def trigger_update_if_new(title, year):
 
 # database/ia_filterdb.py
 
+# database/ia_filterdb.py -> Inside save_file function
+
 async def save_file(media, chat_id, message_id):
     file_name = re.sub(r"@\w+|(_|\-|\.|\+)", " ", str(media.file_name))
     caption = str(media.caption) if media.caption else ""
     
-    # Initialize as empty strings (not "N/A")
     video_line = ""
     duration = ""
     audio = ""
     subtitle = ""
 
     if caption:
-        # Strip HTML tags
         clean_cap = re.sub(r'<[^>]+>', '', caption)
         
-        # 1. Extract Video Line and Duration
+        # Extract Video & Duration
         vid_dur_match = re.search(r"🎬\s*(.*?)\s*\|\s*⏳\s*(.*)", clean_cap)
         if vid_dur_match:
             video_line = vid_dur_match.group(1).strip()
             duration = vid_dur_match.group(2).strip()
 
-        # 2. Extract Audio (Looks for 🔊 OR "Audio:")
+        # Extract Audio (Emoji or Text)
         audio_match = re.search(r"(?:🔊|Audio:)\s*(.*)", clean_cap, re.IGNORECASE)
         if audio_match:
             aud_text = audio_match.group(1).split('\n')[0].strip()
-            # Clean up: remove hashtags and separate if Subtitle emoji is on same line
-            aud_text = aud_text.replace("#", "")
+            aud_text = aud_text.replace("#", "") # Remove hashtags
             if "💬" in aud_text: aud_text = aud_text.split("💬")[0]
             if "Subtitle" in aud_text: aud_text = aud_text.split("Subtitle")[0]
             audio = aud_text.strip()
 
-        # 3. Extract Subtitle (Looks for 💬 OR "Subtitle:")
+        # Extract Subtitle
         sub_match = re.search(r"(?:💬|Subtitle:)\s*(.*)", clean_cap, re.IGNORECASE)
         if sub_match:
             sub_text = sub_match.group(1).split('\n')[0].strip()
             subtitle = sub_text.replace("#", "").strip()
-
-    # Append audio to searchable filename
-    if audio:
-        file_name = f"{file_name} {audio}"
 
     document = {
         '_id': f"{chat_id}_{message_id}",
@@ -159,9 +154,9 @@ async def save_file(media, chat_id, message_id):
         'video_line': video_line,
         'duration': duration,
         'audio': audio,
-        'subtitle': subtitle,
-        'caption': re.sub(r"@\w+|(_|\-|\.|\+)", " ", caption)
+        'subtitle': subtitle
     }
+    # ... rest of the save_file code ...
     
     try:
         await collection.insert_one(document)
