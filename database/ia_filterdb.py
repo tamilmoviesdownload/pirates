@@ -108,59 +108,64 @@ async def trigger_update_if_new(title, year):
 
 # database/ia_filterdb.py
 
-# database/ia_filterdb.py
-# MY code/database/ia_filterdb.py
-
 async def save_file(media, chat_id, message_id):
-    # Basic cleaning
+    # Basic cleaning for the searchable filename
     file_name = re.sub(r"@\w+|(_|\-|\.|\+)", " ", str(media.file_name))
     caption = str(media.caption) if media.caption else ""
-    file_caption = re.sub(r"@\w+|(_|\-|\.|\+)", " ", caption)
     
-    # --- AUDIO SCRAPING LOGIC ---
-    audio_languages = ""
+    # Initialize fields
+    video_line = "N/A"
+    duration = "N/A"
+    audio = "N/A"
+    subtitle = "N/A"
+
     if caption:
-        # Strip HTML tags
+        # Strip HTML for regex cleaning
         clean_cap = re.sub(r'<[^>]+>', '', caption)
         
-        # Match "Audio: LanguageName"
-        # Since your template is: 🔊 Audio: {audio}
-        match = re.search(r"Audio:\s*(.*)", clean_cap, re.IGNORECASE)
-        if match:
-            extracted_audio = match.group(1).strip()
-            
-            # Cut off if "Subtitle" follows it
-            if "Subtitle" in extracted_audio:
-                extracted_audio = extracted_audio.split("Subtitle")[0].strip()
-            
-            # Remove emojis and extra characters
-            extracted_audio = re.sub(r"[🔊💬📌🎬⏳|]", "", extracted_audio).strip()
-            audio_languages = extracted_audio
+        # 1. Extract Video Line and Duration
+        # Matches: 🎬 1080p HEVC 10bit | ⏳ 01:48:53
+        vid_dur_match = re.search(r"🎬\s*(.*?)\s*\|\s*⏳\s*(.*)", clean_cap)
+        if vid_dur_match:
+            video_line = vid_dur_match.group(1).strip()
+            duration = vid_dur_match.group(2).strip()
 
-    # Append languages to the searchable filename
-    if audio_languages:
-        file_name = f"{file_name} {audio_languages}"
-    # -----------------------------
+        # 2. Extract Audio
+        audio_match = re.search(r"Audio:\s*(.*)", clean_cap, re.IGNORECASE)
+        if audio_match:
+            audio = audio_match.group(1).split('\n')[0].strip()
+            if "Subtitle" in audio: audio = audio.split("Subtitle")[0].strip()
+            audio = re.sub(r"[🔊💬📌🎬⏳|]", "", audio).strip()
+
+        # 3. Extract Subtitle
+        sub_match = re.search(r"Subtitle:\s*(.*)", clean_cap, re.IGNORECASE)
+        if sub_match:
+            subtitle = sub_match.group(1).split('\n')[0].strip()
+            subtitle = re.sub(r"[🔊💬📌🎬⏳|]", "", subtitle).strip()
+
+    # Append audio to filename for search results
+    if audio != "N/A":
+        file_name = f"{file_name} {audio}"
 
     document = {
+        '_id': f"{chat_id}_{message_id}",
         'file_name': file_name,
         'file_size': media.file_size,
-        'caption': file_caption,
         'chat_id': chat_id,
-        'message_id': message_id
+        'message_id': message_id,
+        # Store separate fields for the new template
+        'video_line': video_line,
+        'duration': duration,
+        'audio': audio,
+        'subtitle': subtitle
     }
-    
-    document['_id'] = f"{chat_id}_{message_id}"
-    
-    # PTN parsing for metadata
-    data = PTN.parse(file_name)
-    title = data.get('title')
-    year = data.get('year')
     
     try:
         await collection.insert_one(document)
         logger.info(f'Saved - {file_name}')
-        await trigger_update_if_new(title, year)
+        # PTN for the updates channel
+        data = PTN.parse(file_name)
+        await trigger_update_if_new(data.get('title'), data.get('year'))
         return 'suc'
     except DuplicateKeyError:
         return 'dup'
