@@ -174,20 +174,40 @@ async def start(client, message):
         
         for file in files:
             # Fetch scraped data for "Send All" items
-            v_line = file.get('video_line', 'N/A')
-            dur = file.get('duration', 'N/A')
-            aud = file.get('audio', 'N/A')
-            sub = file.get('subtitle', 'N/A')
-            
-            # Use the new custom template
+            v_line = file.get('video_line', '')
+            dur = file.get('duration', '')
+            aud = file.get('audio', '')
+            sub = file.get('subtitle', '')
+            f_name = file.get('file_name', 'Unknown')
+
+            # 1. Header with your specific link
             f_caption = (
-                f"📌 <b>{file['file_name']}</b>\n\n"
-                f"⚜️ Powered By : [ {message.chat.title if message.chat.title else 'ᴛᴀᴍɪʟ ᴍᴏᴠɪᴇꜱ'} ]\n"
-                f"───────────────────\n"
-                f"<blockquote>🎬 <code>{v_line}</code>  |  ⏳ <code>{dur}</code></blockquote>\n"
-                f"<blockquote>🔊 <b>Audio:</b> {aud}</blockquote>\n"
-                f"<blockquote>💬 <b>Subtitle:</b> {sub}</blockquote>"
+                f"<b><a href='https://t.me/tamilmoviesdownloadtorrent'>{f_name}</a></b>\n\n"
+                f"<b>⚜️ Powered By : <a href='https://t.me/tamilmoviesdownloadtorrent'>[ ᴛᴀᴍɪʟ ᴍᴏᴠɪᴇꜱ ]</a></b>"
             )
+
+            # 2. Add Video Info only if exists
+            if v_line or dur:
+                info_line = ""
+                if v_line:
+                    info_line += f"🎬 <code>{v_line}</code>"
+                if v_line and dur:
+                    info_line += "  |  "
+                if dur:
+                    info_line += f"⏳ <code>{dur}</code>"
+
+                f_caption += (
+                    f"\n───────────────────\n"
+                    f"<blockquote>{info_line}</blockquote>"
+                )
+
+            # 3. Add Audio only if exists
+            if aud:
+                f_caption += f"\n<blockquote>🔊 {aud}</blockquote>"
+
+            # 4. Add Subtitle only if exists
+            if sub:
+                f_caption += f"\n<blockquote>💬 {sub}</blockquote>"
 
             if IS_STREAM:
                 btn = [[
