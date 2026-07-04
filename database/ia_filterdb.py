@@ -37,95 +37,58 @@ async def setup_database():
         )
         logger.info("DATA_DATABASE_URL update indexes created/verified.")
     except OperationFailure as e:
-        if e.code == 85:  # IndexOptionsConflict
-            logger.warning("DATA_DATABASE_URL update index conflict detected. Dropping old indexes and recreating...")
+        if e.code == 85: 
+            logger.warning("DATA_DATABASE_URL update index conflict. Recreating...")
             await updates_collection.drop_indexes() 
-            await updates_collection.create_index(
-                [("title", ASCENDING), ("year", ASCENDING)],
-                unique=True,
-                name="title_year_unique"
-            )
-            logger.info("DATA_DATABASE_URL update indexes recreated successfully.")
+            await updates_collection.create_index([("title", ASCENDING), ("year", ASCENDING)], unique=True, name="title_year_unique")
         else:
             logger.exception(e)
-            exit()
 
     try:
-        await collection.create_index([("file_name", TEXT), ("caption", TEXT)], name="file_name_caption_text")
-        logger.info("FILES_DATABASE_URL indexes created/verified.")
+        # Crucial for search speed with 2 million files
+        await collection.create_index([("file_name", TEXT)], name="file_name_text")
+        logger.info("FILES_DATABASE_URL indexes verified.")
     except OperationFailure as e:
-        if e.code == 85:  # IndexOptionsConflict
-            logger.warning("FILES_DATABASE_URL index conflict detected. Dropping old text indexes and recreating...")
+        if e.code == 85: 
             await collection.drop_indexes() 
-            await collection.create_index([("file_name", TEXT), ("caption", TEXT)], name="file_name_caption_text")
-            logger.info("FILES_DATABASE_URL indexes recreated successfully.")
-        elif 'quota' in str(e).lower():
-            if not SECOND_FILES_DATABASE_URL:
-                logger.error('Your FILES_DATABASE_URL quota is full, add SECOND_FILES_DATABASE_URL. (Bot will still work for searching)')
-            else:
-                logger.info('FILES_DATABASE_URL quota is full, relying on SECOND_FILES_DATABASE_URL')
-        else:
-            logger.exception(e)
-            exit() 
+            await collection.create_index([("file_name", TEXT)], name="file_name_text")
 
     if SECOND_FILES_DATABASE_URL and second_collection is not None:
         try:
-            await second_collection.create_index([("file_name", TEXT), ("caption", TEXT)], name="file_name_caption_text")
-            logger.info("SECOND_FILES_DATABASE_URL indexes created/verified.")
-        except OperationFailure as e:
-            if e.code == 85:
-                logger.warning("SECOND_FILES_DATABASE_URL index conflict detected. Dropping old text indexes and recreating...")
-                await second_collection.drop_indexes()
-                await second_collection.create_index([("file_name", TEXT), ("caption", TEXT)], name="file_name_caption_text")
-                logger.info("SECOND_FILES_DATABASE_URL indexes recreated successfully.")
-            else:
-                logger.exception(e)
-                exit()
-
+            await second_collection.create_index([("file_name", TEXT)], name="file_name_text")
+        except:
+            pass
 
 async def second_db_count_documents():
-    if second_collection is None:
-        return 0
+    if second_collection is None: return 0
     return await second_collection.count_documents({})
 
 async def db_count_documents():
     return await collection.count_documents({})
 
-
 async def trigger_update_if_new(title, year):
-    if not title:
-        return
+    if not title: return
     normalized_title = str(title).strip().lower()
     try:
-        await updates_collection.insert_one({
-            "title": normalized_title, 
-            "year": year
-        })
+        await updates_collection.insert_one({"title": normalized_title, "year": year})
         asyncio.create_task(send_update(title, year))
     except DuplicateKeyError:
         pass
 
 async def save_file(media, chat_id, message_id):
-    # 1. Clean the original filename
     base_file_name = re.sub(r"@\w+|(_|\-|\.|\+)", " ", str(media.file_name))
     caption = str(media.caption) if media.caption else ""
     
-    video_line = ""
-    duration = ""
-    audio = ""
-    subtitle = ""
+    video_line, duration, audio, subtitle = "", "", "", ""
 
-    # 2. Extraction logic
     if caption:
         clean_cap = re.sub(r'<[^>]+>', '', caption)
         
-        # Extract Video & Duration
         vid_dur_match = re.search(r"🎬\s*(.*?)\s*\|\s*⏳\s*(.*)", clean_cap)
         if vid_dur_match:
             video_line = vid_dur_match.group(1).strip()
             duration = vid_dur_match.group(2).strip()
 
-        # Extract Audio
         audio_match = re.search(r"(?:🔊|Audio:)\s*(.*)", clean_cap, re.IGNORECASE)
         if audio_match:
             aud_text = audio_match.group(1).split('\n')[0].strip()
@@ -134,26 +97,24 @@ async def save_file(media, chat_id, message_id):
             if "Subtitle" in aud_text: aud_text = aud_text.split("Subtitle")[0]
             audio = aud_text.strip()
 
-        # Extract Subtitle (Still extracting it for the DB field, but we won't put it in the search name)
         sub_match = re.search(r"(?:💬|Subtitle:)\s*(.*)", clean_cap, re.IGNORECASE)
         if sub_match:
             sub_text = sub_match.group(1).split('\n')[0].strip()
             subtitle = sub_text.replace("#", "").strip()
 
-    # 3. UPDATED SEARCHABLE NAME (Only adding Audio here)
     searchable_name = f"{base_file_name} {audio}"
     searchable_name = re.sub(r"\s+", " ", searchable_name).strip()
 
     document = {
         '_id': f"{chat_id}_{message_id}",
-        'file_name': searchable_name, # Search finds: "Movie Name Tamil"
+        'file_name': searchable_name,
         'file_size': media.file_size,
         'chat_id': chat_id,
         'message_id': message_id,
         'video_line': video_line,
         'duration': duration,
-        'audio': audio,              # Still saved here for the "Language" button
-        'subtitle': subtitle         # Still saved here for metadata, but hidden from search
+        'audio': audio,
+        'subtitle': subtitle
     }
     
     try:
@@ -170,71 +131,47 @@ async def save_file(media, chat_id, message_id):
         
 async def get_search_results(query):
     query = str(query).strip()
+    results = []
+
+    # If query is empty, show recent 100 files
     if not query:
-        # ... (Keep your recent files logic)
+        cursor1 = collection.find({}).sort("_id", -1).limit(100)
+        results = await cursor1.to_list(length=100)
+        
+        if SECOND_FILES_DATABASE_URL and second_collection is not None and len(results) < 100:
+            cursor2 = second_collection.find({}).sort("_id", -1).limit(100 - len(results))
+            docs2 = await cursor2.to_list(length=100 - len(results))
+            results.extend(docs2)
         return results
 
-    # Split words to make search order-independent (Interstellar Tamil = Tamil Interstellar)
-    # This is much faster than complex regex
+    # Process search words for order-independent search
     words = query.split()
-    filters = []
+    and_filters = []
     for word in words:
-        filters.append({"file_name": {"$regex": word, "$options": "i"}})
+        and_filters.append({"file_name": {"$regex": word, "$options": "i"}})
     
-    search_filter = {"$and": filters}
+    search_filter = {"$and": and_filters}
 
-    results = []
+    # Search Database 1
     cursor1 = collection.find(search_filter)
     docs1 = await cursor1.to_list(length=None) 
     results.extend(docs1)
 
+    # Search Database 2
     if SECOND_FILES_DATABASE_URL and second_collection is not None:
         cursor2 = second_collection.find(search_filter)
         docs2 = await cursor2.to_list(length=None)
         results.extend(docs2)
 
     return results
-
-    if ' ' not in query:
-        raw_pattern = r'(\b|[\.\+\-_])' + query + r'(\b|[\.\+\-_])'
-    else:
-        raw_pattern = query.replace(' ', r'.*[\s\.\+\-_]')
-
-    db_query = {"$regex": raw_pattern, "$options": "i"}
-    search_filter = {"$or": [{"file_name": db_query}]}
-    
-    if USE_CAPTION_FILTER:
-        search_filter["$or"].append({"caption": db_query})
-
-    results = []
-    
-    cursor1 = collection.find(search_filter)
-    docs1 = await cursor1.to_list(length=None) 
-    results.extend(docs1)
-
-    if SECOND_FILES_DATABASE_URL and second_collection is not None:
-        cursor2 = second_collection.find(search_filter)
-        docs2 = await cursor2.to_list(length=None)
-        results.extend(docs2)
-
-    return results
-
 
 async def delete_files(query):
     query = query.strip()
-    if not query:
-        raw_pattern = '.'
-    elif ' ' not in query:
-        raw_pattern = r'(\b|[\.\+\-_])' + query + r'(\b|[\.\+\-_])'
-    else:
-        raw_pattern = query.replace(' ', r'.*[\s\.\+\-_]')
+    if not query: return 0
     
-    try:
-        regex = re.compile(raw_pattern, flags=re.IGNORECASE)
-    except:
-        regex = query
-        
-    filter_query = {'file_name': regex}
+    words = query.split()
+    and_filters = [{"file_name": {"$regex": word, "$options": "i"}} for word in words]
+    filter_query = {"$and": and_filters}
     
     result1 = await collection.delete_many(filter_query)
     total_deleted = result1.deleted_count
@@ -245,20 +182,17 @@ async def delete_files(query):
     
     return total_deleted
 
-
 async def get_file_details(query):
     file_details = await collection.find_one({'_id': query})
     if not file_details and SECOND_FILES_DATABASE_URL and second_collection is not None:
         file_details = await second_collection.find_one({'_id': query})
     return file_details
 
-
 def encode_file_id(s: bytes) -> str:
     r = b""
     n = 0
     for i in s + bytes([22]) + bytes([4]):
-        if i == 0:
-            n += 1
+        if i == 0: n += 1
         else:
             if n:
                 r += b"\x00" + bytes([n])
@@ -268,14 +202,4 @@ def encode_file_id(s: bytes) -> str:
 
 def unpack_new_file_id(new_file_id):
     decoded = FileId.decode(new_file_id)
-    file_id = encode_file_id(
-        pack(
-            "<iiqq",
-            int(decoded.file_type),
-            decoded.dc_id,
-            decoded.media_id,
-            decoded.access_hash
-        )
-    )
-    return file_id
-
+    return encode_file_id(pack("<iiqq", int(decoded.file_type), decoded.dc_id, decoded.media_id, decoded.access_hash))
