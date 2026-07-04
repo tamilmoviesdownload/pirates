@@ -47,57 +47,7 @@ async def pm_search(client, message):
         if int(total) != 0:
             await message.reply_text(f'<b><i>🤗 ᴛᴏᴛᴀʟ <code>{total}</code> ʀᴇꜱᴜʟᴛꜱ ꜰᴏᴜɴᴅ ɪɴ ᴛʜɪꜱ ɢʀᴏᴜᴘ 👇</i></b>\n\nor buy premium subscription', reply_markup=reply_markup)
 
-#######################################################################################
-@Client.on_callback_query(filters.regex(r"^seasons"))
-async def seasons_menu(client: Client, query: CallbackQuery):
-    _, key, req, offset = query.data.split("#")
-    if int(req) != query.from_user.id:
-        return await query.answer("Don't Click Other Results!", show_alert=True)
-    
-    # Static 12 Season Buttons
-    btn = [[InlineKeyboardButton("⇓ SELECT SEASON ⇓", callback_data="buttons")]]
-    
-    for i in range(1, 13, 2): # Creates 6 rows of 2 buttons each
-        btn.append([
-            InlineKeyboardButton(f"SEASON {i:02}", callback_data=f"pick_sea#{i}#{key}#{req}"),
-            InlineKeyboardButton(f"SEASON {i+1:02}", callback_data=f"pick_sea#{i+1}#{key}#{req}")
-        ])
-
-    btn.append([InlineKeyboardButton("↭ BACK TO FILES ↭", callback_data=f"next_{req}_{key}_{offset}")])
-    
-    await query.message.edit_text(
-        f"<b>Select Season for: {BUTTONS.get(key, 'Files')}</b>",
-        reply_markup=InlineKeyboardMarkup(btn)
-    )
-
-@Client.on_callback_query(filters.regex(r"^pick_sea"))
-async def pick_sea(client: Client, query: CallbackQuery):
-    _, sea_num, key, req = query.data.split("#")
-    all_files = ALL_FILES.get(key)
-    if not all_files: return await query.answer("Expired!", show_alert=True)
-    
-    # Update selection string for logic
-    target_s = f"S{int(sea_num):02}" # S01
-    target_s2 = f"S{int(sea_num)}"   # S1
-    target_name = f"Season {int(sea_num)}" # Season 1
-    
-    # Filter the list
-    filtered = []
-    for file in all_files:
-        fname = file.get('file_name', '').upper()
-        if target_s in fname or target_s2 in fname or target_name.upper() in fname:
-            filtered.append(file)
-
-    if not filtered:
-        return await query.answer(f"No files found for Season {sea_num}!", show_alert=True)
-
-    # If files exist, save filtered list and show them
-    SELECT[key]['season'] = target_s
-    FILES[key] = filtered
-    query.data = f"next_{req}_{key}_0"
-    await next_page(client, query)
-
-################################################################################################
+            
 
 @Client.on_message(filters.group & filters.text & filters.incoming)
 async def group_search(client, message):
@@ -142,14 +92,9 @@ async def next_page(bot, query):
     cap = CAP.get(key)
     files = FILES.get(key)
     select = SELECT.get(key)
-    
     if not search:
         await query.answer(f"Hello {query.from_user.first_name},\nSend New Request Again!", show_alert=True)
         return
-
-    # Ensure metadata tracking exists to avoid errors
-    if 'season' not in select:
-        select['season'] = 'any'
 
     offset = int(offset)
     files, n_offset, total = await handle_next_back(files, max_results=MAX_BTN, offset=offset)
@@ -157,81 +102,70 @@ async def next_page(bot, query):
     temp.GET_ALL_FILES[key] = files
     settings = await get_settings(query.message.chat.id)
     del_msg = f"\n\n<b>⚠️ ᴛʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ʙᴇ ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ ᴀꜰᴛᴇʀ <code>{get_readable_time(DELETE_TIME)}</code> ᴛᴏ ᴀᴠᴏɪᴅ ᴄᴏᴘʏʀɪɢʜᴛ ɪssᴜᴇs</b>" if settings["auto_delete"] else ''
-    
     files_link = ''
-    btn = []
 
-    # --- ROW 1: REMOVE ADS | SEND ALL ---
-    row1 = [InlineKeyboardButton("🚀 REMOVE ADS", url=f"https://t.me/{temp.U_NAME}?start=premium")]
-    
-    if settings['shortlink'] and not await is_premium(query.from_user.id, bot):
-        # Shortlink for non-premium users
-        all_link = await get_shortlink(settings['url'], settings['api'], f'https://t.me/{temp.U_NAME}?start=all_{query.message.chat.id}_{key}')
-        row1.append(InlineKeyboardButton("📤 SEND ALL", url=all_link))
-    else:
-        # Direct send for premium or if shortlink disabled
-        row1.append(InlineKeyboardButton("📤 SEND ALL", callback_data=f"send_all#{key}#{req}"))
-    
-    btn.append(row1)
-
-    # --- ROW 2: QUALITY | LANGUAGE | SEASON ---
-    l_txt = "LANGUAGE" if select['lang'] == 'any' else f"✅ {select['lang'].upper()}"
-    q_txt = "QUALITY" if select['qual'] == 'any' else f"✅ {select['qual'].upper()}"
-    s_txt = "SEASON" if select['season'] == 'any' else f"✅ {select['season'].upper()}"
-    
-    btn.append([
-        InlineKeyboardButton(q_txt, callback_data=f"quality#{key}#{req}#{offset}"),
-        InlineKeyboardButton(l_txt, callback_data=f"languages#{key}#{req}#{offset}"),
-        InlineKeyboardButton(s_txt, callback_data=f"seasons#{key}#{req}#{offset}")
-    ])
-
-    # --- ROW 3+: FILE RESULTS ---
     if settings['links']:
+        btn = []
         for file_num, file in enumerate(files, start=offset+1):
-            f_name = file.get('file_name', 'Unknown')
-            files_link += f"""<b>\n\n{file_num}. <a href=https://t.me/{temp.U_NAME}?start=file_{query.message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {f_name}</a></b>"""
+            files_link += f"""<b>\n\n{file_num}. <a href=https://t.me/{temp.U_NAME}?start=file_{query.message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {file['file_name']}</a></b>"""
     else:
-        for file in files:
-            btn.append([
-                InlineKeyboardButton(
-                    text=f"{get_size(file['file_size'])} | {file['file_name']}", 
-                    callback_data=f"file#{file['_id']}"
-                )
-            ])
+        btn = [[
+            InlineKeyboardButton(text=f"{get_size(file['file_size'])} - {file['file_name']}", callback_data=f"file#{file['_id']}")
+        ]
+            for file in files
+        ]
 
-    # --- FOOTER: BACK | PAGE | NEXT ---
-    total_pages = math.ceil(total / MAX_BTN)
-    curr_page = math.ceil(int(offset) / MAX_BTN) + 1
-    
-    nav_row = []
-    
-    # Back logic
-    if offset != 0:
+    if 0 < offset <= MAX_BTN:
+        off_set = 0
+    elif offset == 0:
+        off_set = None
+    else:
         off_set = offset - MAX_BTN
-        nav_row.append(InlineKeyboardButton("« BACK", callback_data=f"next_{req}_{key}_{off_set}"))
+        
+    if total <= MAX_BTN:
+        btn.append(
+            [InlineKeyboardButton("🚫 No more pages 🚫", callback_data="buttons")]
+        )
+    elif n_offset == 0:
+        btn.append(
+            [InlineKeyboardButton("« ʙᴀᴄᴋ", callback_data=f"next_{req}_{key}_{off_set}"),
+             InlineKeyboardButton(f"{math.ceil(int(offset) / MAX_BTN) + 1}/{math.ceil(total / MAX_BTN)}", callback_data="buttons")]
+        )
+    elif off_set is None:
+        btn.append(
+            [InlineKeyboardButton(f"{math.ceil(int(offset) / MAX_BTN) + 1}/{math.ceil(total / MAX_BTN)}", callback_data="buttons"),
+             InlineKeyboardButton("ɴᴇxᴛ »", callback_data=f"next_{req}_{key}_{n_offset}")])
     else:
-        nav_row.append(InlineKeyboardButton("« BACK", callback_data="buttons"))
+        btn.append(
+            [
+                InlineKeyboardButton("« ʙᴀᴄᴋ", callback_data=f"next_{req}_{key}_{off_set}"),
+                InlineKeyboardButton(f"{math.ceil(int(offset) / MAX_BTN) + 1}/{math.ceil(total / MAX_BTN)}", callback_data="buttons"),
+                InlineKeyboardButton("ɴᴇxᴛ »", callback_data=f"next_{req}_{key}_{n_offset}")
+            ]
+        )
 
-    # Page Counter
-    nav_row.append(InlineKeyboardButton(f"{curr_page} / {total_pages}", callback_data="buttons"))
+    lang = "📰 ʟᴀɴɢᴜᴀɢᴇs" if select['lang'] == 'any' else f"✔️ {select['lang'].title()}"
+    qual = "🔍 ǫᴜᴀʟɪᴛʏ" if select['qual'] == 'any' else f"✔️ {select['qual'].title()}"
+    btn.insert(0,
+                [InlineKeyboardButton(lang, callback_data=f"languages#{key}#{req}#{offset}"),
+                InlineKeyboardButton(qual, callback_data=f"quality#{key}#{req}#{offset}")]
+            )
 
-    # Next logic
-    if n_offset != 0:
-        nav_row.append(InlineKeyboardButton("NEXT »", callback_data=f"next_{req}_{key}_{n_offset}"))
+    if settings['shortlink'] and not await is_premium(query.from_user.id, bot):
+        btn.insert(1,
+            [InlineKeyboardButton("♻️ sᴇɴᴅ ᴀʟʟ ♻️", url=await get_shortlink(settings['url'], settings['api'], f'https://t.me/{temp.U_NAME}?start=all_{query.message.chat.id}_{key}')),
+             InlineKeyboardButton(settings['tutorial_name'], url=settings['tutorial'])]
+        )
     else:
-        nav_row.append(InlineKeyboardButton("NEXT »", callback_data="buttons"))
-    
-    btn.append(nav_row)
-
-    # Add tutorial button if set
-    btn.append([InlineKeyboardButton(settings['tutorial_name'], url=settings['tutorial'])])
-
-    await query.message.edit_text(
-        text=cap + files_link + del_msg, 
-        reply_markup=InlineKeyboardMarkup(btn), 
-        link_preview_options=LinkPreviewOptions(is_disabled=True), 
-        parse_mode=enums.ParseMode.HTML
+        btn.insert(1,
+            [InlineKeyboardButton("♻️ sᴇɴᴅ ᴀʟʟ ♻️", callback_data=f"send_all#{key}#{req}"),
+             InlineKeyboardButton(settings['tutorial_name'], url=settings['tutorial'])]
+        )
+    btn.append(
+        [InlineKeyboardButton('🤑 Buy Premium', url=f"https://t.me/{temp.U_NAME}?start=premium")]
     )
+
+    await query.message.edit_text(cap + files_link + del_msg, reply_markup=InlineKeyboardMarkup(btn), link_preview_options=LinkPreviewOptions(is_disabled=True), parse_mode=enums.ParseMode.HTML)
 
 
 @Client.on_callback_query(filters.regex(r"^languages"))
@@ -1269,46 +1203,51 @@ async def auto_filter(client, msg, s, spoll=False):
     ALL_FILES[key] = files
     files, offset, total_results = await handle_next_back(files, max_results=MAX_BTN)
 
-# Ensure tracking exists
     req = message.from_user.id if message and message.from_user else 0
     BUTTONS[key] = search
     temp.GET_ALL_FILES[key] = files
-    SELECT[key] = {'lang': 'any', 'qual': 'any', 'season': 'any'} # Added season here
+    SELECT[key] = {'lang': 'any', 'qual': 'any'}
 
-    # --- START OF UI UPDATE ---
-    btn = []
+    files_link = ""
+    if settings['links']:
+        btn = []
+        for file_num, file in enumerate(files, start=1):
+            files_link += f"""<b>\n\n{file_num}. <a href=https://t.me/{temp.U_NAME}?start=file_{message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {file['file_name']}</a></b>"""
+    else:
+        btn = [[
+            InlineKeyboardButton(text=f"{get_size(file['file_size'])} - {file['file_name']}", callback_data=f'file#{file["_id"]}')
+        ]
+            for file in files
+        ]   
+
+    if offset != 0:
+        btn.append(
+            [InlineKeyboardButton(text=f"1/{math.ceil(int(total_results) / MAX_BTN)}", callback_data="buttons"),
+             InlineKeyboardButton(text="ɴᴇxᴛ »", callback_data=f"next_{req}_{key}_{offset}")]
+        )
+    else:
+        btn.append(
+            [InlineKeyboardButton("🚫 No more pages 🚫", callback_data="buttons")]
+        )
     
-    # ROW 1: REMOVE ADS | SEND ALL
-    row1 = [InlineKeyboardButton("🚀 REMOVE ADS", url=f"https://t.me/{temp.U_NAME}?start=premium")]
-    if settings['shortlink'] and not await is_premium(req, client):
-        row1.append(InlineKeyboardButton("📤 SEND ALL", url=await get_shortlink(settings['url'], settings['api'], f'https://t.me/{temp.U_NAME}?start=all_{message.chat.id}_{key}')))
+    btn.insert(0,
+                [InlineKeyboardButton("📰 ʟᴀɴɢᴜᴀɢᴇs", callback_data=f"languages#{key}#{req}#{offset}"),
+                InlineKeyboardButton("🔍 ǫᴜᴀʟɪᴛʏ", callback_data=f"quality#{key}#{req}#{offset}")]
+            )
+
+    if settings['shortlink'] and not await is_premium(message.from_user.id, client):
+        btn.insert(1,
+            [InlineKeyboardButton("♻️ sᴇɴᴅ ᴀʟʟ ♻️", url=await get_shortlink(settings['url'], settings['api'], f'https://t.me/{temp.U_NAME}?start=all_{message.chat.id}_{key}')),
+             InlineKeyboardButton(settings['tutorial_name'], url=settings['tutorial'])]
+        )
     else:
-        row1.append(InlineKeyboardButton("📤 SEND ALL", callback_data=f"send_all#{key}#{req}"))
-    btn.append(row1)
-
-    # ROW 2: QUALITY | LANGUAGE | SEASON
-    btn.append([
-        InlineKeyboardButton("QUALITY", callback_data=f"quality#{key}#{req}#0"),
-        InlineKeyboardButton("LANGUAGE", callback_data=f"languages#{key}#{req}#0"),
-        InlineKeyboardButton("SEASON", callback_data=f"seasons#{key}#{req}#0")
-    ])
-
-    # FILE RESULTS
-    for file in files:
-        btn.append([InlineKeyboardButton(text=f"{get_size(file['file_size'])} | {file['file_name']}", callback_data=f'file#{file["_id"]}')])
-
-    # FOOTER: BACK | PAGE | NEXT
-    total_pages = math.ceil(total_results / MAX_BTN)
-    nav = [
-        InlineKeyboardButton("« BACK", callback_data="buttons"),
-        InlineKeyboardButton(f"1 / {total_pages}", callback_data="buttons")
-    ]
-    if total_results > MAX_BTN:
-        nav.append(InlineKeyboardButton("NEXT »", callback_data=f"next_{req}_{key}_{offset}"))
-    else:
-        nav.append(InlineKeyboardButton("NEXT »", callback_data="buttons"))
-    btn.append(nav)
-    # --- END OF UI UPDATE ---
+        btn.insert(1,
+            [InlineKeyboardButton("♻️ sᴇɴᴅ ᴀʟʟ ♻️", callback_data=f"send_all#{key}#{req}"),
+             InlineKeyboardButton(settings['tutorial_name'], url=settings['tutorial'])]
+        )
+    btn.append(
+        [InlineKeyboardButton('🤑 Buy Premium', url=f"https://t.me/{temp.U_NAME}?start=premium")]
+    )
 
     imdb = await get_poster(search, file=(files[0])['file_name']) if settings["imdb"] else None
     TEMPLATE = settings['template']
@@ -1410,4 +1349,3 @@ async def advantage_spell_chok(message, s):
         await message.delete()
     except:
         pass
-
