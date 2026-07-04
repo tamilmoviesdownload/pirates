@@ -47,7 +47,57 @@ async def pm_search(client, message):
         if int(total) != 0:
             await message.reply_text(f'<b><i>🤗 ᴛᴏᴛᴀʟ <code>{total}</code> ʀᴇꜱᴜʟᴛꜱ ꜰᴏᴜɴᴅ ɪɴ ᴛʜɪꜱ ɢʀᴏᴜᴘ 👇</i></b>\n\nor buy premium subscription', reply_markup=reply_markup)
 
-            
+#######################################################################################
+@Client.on_callback_query(filters.regex(r"^seasons"))
+async def seasons_menu(client: Client, query: CallbackQuery):
+    _, key, req, offset = query.data.split("#")
+    if int(req) != query.from_user.id:
+        return await query.answer("Don't Click Other Results!", show_alert=True)
+    
+    # Static 12 Season Buttons
+    btn = [[InlineKeyboardButton("⇓ SELECT SEASON ⇓", callback_data="buttons")]]
+    
+    for i in range(1, 13, 2): # Creates 6 rows of 2 buttons each
+        btn.append([
+            InlineKeyboardButton(f"SEASON {i:02}", callback_data=f"pick_sea#{i}#{key}#{req}"),
+            InlineKeyboardButton(f"SEASON {i+1:02}", callback_data=f"pick_sea#{i+1}#{key}#{req}")
+        ])
+
+    btn.append([InlineKeyboardButton("↭ BACK TO FILES ↭", callback_data=f"next_{req}_{key}_{offset}")])
+    
+    await query.message.edit_text(
+        f"<b>Select Season for: {BUTTONS.get(key, 'Files')}</b>",
+        reply_markup=InlineKeyboardMarkup(btn)
+    )
+
+@Client.on_callback_query(filters.regex(r"^pick_sea"))
+async def pick_sea(client: Client, query: CallbackQuery):
+    _, sea_num, key, req = query.data.split("#")
+    all_files = ALL_FILES.get(key)
+    if not all_files: return await query.answer("Expired!", show_alert=True)
+    
+    # Update selection string for logic
+    target_s = f"S{int(sea_num):02}" # S01
+    target_s2 = f"S{int(sea_num)}"   # S1
+    target_name = f"Season {int(sea_num)}" # Season 1
+    
+    # Filter the list
+    filtered = []
+    for file in all_files:
+        fname = file.get('file_name', '').upper()
+        if target_s in fname or target_s2 in fname or target_name.upper() in fname:
+            filtered.append(file)
+
+    if not filtered:
+        return await query.answer(f"No files found for Season {sea_num}!", show_alert=True)
+
+    # If files exist, save filtered list and show them
+    SELECT[key]['season'] = target_s
+    FILES[key] = filtered
+    query.data = f"next_{req}_{key}_0"
+    await next_page(client, query)
+
+################################################################################################
 
 @Client.on_message(filters.group & filters.text & filters.incoming)
 async def group_search(client, message):
