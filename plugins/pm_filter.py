@@ -707,6 +707,24 @@ async def cb_handler(client: Client, query: CallbackQuery):
         file_id = query.data.split('#', 1)[1]
         if not await is_premium(query.from_user.id, client):
             return await query.answer(f"Only for premium users, use /plan for details", show_alert=True)
+# Check if the file_id is actually a ChatID_MsgID format
+        if "_" in file_id:
+            try:
+                # Split the string to get Chat ID and Message ID
+                chan_id, msg_id = file_id.split("_")
+                # Fetch the actual message from the channel
+                temp_msg = await client.get_messages(int(chan_id), int(msg_id))
+                
+                # Get the real file_id from the media
+                media = temp_msg.video or temp_msg.document or temp_msg.audio
+                if media:
+                    file_id = media.file_id
+                else:
+                    return await query.answer("Error: Media not found in the source channel.", show_alert=True)
+            except Exception as e:
+                return await query.answer(f"Error fetching file: {e}", show_alert=True)
+
+        # Now send the actual file_id
         msg = await client.send_cached_media(chat_id=BIN_CHANNEL, file_id=file_id)
         watch = f"{URL}watch/{msg.id}"
         download = f"{URL}download/{msg.id}"
