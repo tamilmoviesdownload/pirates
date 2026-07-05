@@ -1253,7 +1253,7 @@ watch_tmplt = """<!DOCTYPE html>
 
         /* Buttons */
         .btn-row {
-            display:grid; grid-template-columns:repeat(3, 1fr); gap:.8rem;
+            display:grid; grid-template-columns:repeat(2, 1fr); gap:.8rem;
             margin-top:1.2rem;
             width:100%; max-width:1060px;
         }
@@ -1300,6 +1300,13 @@ watch_tmplt = """<!DOCTYPE html>
             box-shadow:0 4px 16px rgba(16,185,129,.35);
         }
         .btn-mx:hover { box-shadow:0 7px 24px rgba(16,185,129,.52); }
+
+        /* 1DM – cyan/blue */
+        .btn-1dm {
+            background:linear-gradient(135deg,#0284c7,#0ea5e9,#38bdf8);
+            box-shadow:0 4px 16px rgba(14,165,233,.35);
+        }
+        .btn-1dm:hover { box-shadow:0 7px 24px rgba(14,165,233,.52); }
 
         /* Footer */
         footer {
@@ -1350,6 +1357,14 @@ watch_tmplt = """<!DOCTYPE html>
         .plyr__menu__container .plyr__control[role=menuitemradio][aria-checked=true]::before { background:var(--p); }
 
         /* Responsive */
+        @media (max-width:768px) {
+            .plyr__volume input[type=range] { display:none !important; max-width:0 !important; }
+            .plyr__volume { width:auto !important; min-width:0 !important; }
+            .plyr__controls { gap:4px !important; padding:8px 10px !important; }
+            .plyr__progress { min-width:100px !important; }
+            .plyr__time { font-size:12px !important; padding:0 !important; }
+            .plyr__control { padding:5px !important; }
+        }
         @media (max-width:600px) {
             .container { padding:1rem .85rem .85rem; }
             .btn-row, .err-btn-grid { grid-template-columns:1fr; gap:.6rem; }
@@ -1417,6 +1432,16 @@ watch_tmplt = """<!DOCTYPE html>
                 <polygon points="10 8 16 12 10 16 10 8"/>
             </svg>
             MX Player
+        </a>
+
+        <!-- 1DM -->
+        <a href="intent:{src}#Intent;package=idm.internet.download.manager;end" class="xbtn btn-1dm">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="8 12 12 16 16 12"/>
+                <line x1="12" y1="8" x2="12" y2="16"/>
+            </svg>
+            1DM Downloader
         </a>
     </div>
 
