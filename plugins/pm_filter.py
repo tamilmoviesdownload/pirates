@@ -22,6 +22,116 @@ ALL_FILES={}
 QUERY_CACHE = {}
 
 
+def clean_filename_for_matching(filename: str) -> str:
+    fname = filename.lower()
+    fname = re.sub(r'\b(?:x264|x265|h264|h265|hevc|avc|xvid|divx|av1|vp9)\b', ' ', fname)
+    fname = re.sub(r'\b(?:2160p|1080p|720p|480p|360p|240p|4k|8k|1080i|720i)\b', ' ', fname)
+    fname = re.sub(r'\b(?:10bit|8bit|12bit|6ch|2ch|5\.1ch|7\.1ch|5\.1|7\.1|2\.0|aac|flac|dts|truehd|atmos|mp3|ac3|dd5\.1)\b', ' ', fname)
+    fname = re.sub(r'\b\d+(?:\.\d+)?\s*(?:mb|gb|kb|kbps|mbps|fps|hz|mhz)\b', ' ', fname)
+    return fname
+
+
+def get_seasons_from_filename(filename: str) -> set:
+    seasons = set()
+    fname = clean_filename_for_matching(filename)
+    
+    range_matches = re.findall(r'(?:s|season)\s*[\._-]?\s*(\d{1,2})\s*(?:-|to)\s*(?:s|season)?\s*[\._-]?\s*(\d{1,2})', fname)
+    for start, end in range_matches:
+        try:
+            s_start, s_end = int(start), int(end)
+            if 1 <= s_start <= 50 and 1 <= s_end <= 50 and s_start <= s_end:
+                for s_num in range(s_start, s_end + 1):
+                    seasons.add(s_num)
+        except ValueError:
+            pass
+
+    single_matches = re.findall(r'(?<![a-z])(?:s|season)\s*[\._-]?\s*(\d{1,2})(?!\d)', fname)
+    for match in single_matches:
+        try:
+            val = int(match)
+            if 1 <= val <= 50:
+                seasons.add(val)
+        except ValueError:
+            pass
+
+    x_matches = re.findall(r'(?<!\d)(\d{1,2})x\d{1,4}(?!\d)', fname)
+    for match in x_matches:
+        try:
+            val = int(match)
+            if 1 <= val <= 50:
+                seasons.add(val)
+        except ValueError:
+            pass
+
+    nth_matches = re.findall(r'(\d{1,2})(?:st|nd|rd|th)\s*season', fname)
+    for match in nth_matches:
+        try:
+            val = int(match)
+            if 1 <= val <= 50:
+                seasons.add(val)
+        except ValueError:
+            pass
+
+    return seasons
+
+
+def get_episodes_from_filename(filename: str) -> set:
+    episodes = set()
+    fname = clean_filename_for_matching(filename)
+    
+    range_matches = re.findall(r'(?<![a-z])(?:e|ep|episode|x)\s*[\._-]?\s*(\d{1,4})\s*(?:-|to)\s*(?:e|ep|episode|x)?\s*[\._-]?\s*(\d{1,4})(?!\d)', fname)
+    for start, end in range_matches:
+        try:
+            e_start, e_end = int(start), int(end)
+            if 0 <= e_start <= 3000 and 0 <= e_end <= 3000 and e_start <= e_end and (e_end - e_start) <= 100:
+                for e_num in range(e_start, e_end + 1):
+                    episodes.add(e_num)
+        except ValueError:
+            pass
+
+    single_matches = re.findall(r'(?<![a-z])(?:e|ep|episode|x)\s*[\._-]?\s*(\d{1,4})(?!\d)', fname)
+    for match in single_matches:
+        try:
+            val = int(match)
+            if 0 <= val <= 3000:
+                episodes.add(val)
+        except ValueError:
+            pass
+
+    return episodes
+
+
+def filter_files(all_files, select_dict):
+    lang_sel = select_dict.get('lang', 'any')
+    qual_sel = select_dict.get('qual', 'any')
+    seas_sel = select_dict.get('season', 'any')
+    epis_sel = select_dict.get('episode', 'any')
+
+    filtered = []
+    for file in all_files:
+        fname = file.get('file_name', '').lower()
+        lang_ok = (lang_sel == 'any') or (lang_sel.lower() in fname)
+        qual_ok = (qual_sel == 'any') or (qual_sel.lower() in fname)
+        if seas_sel == 'any':
+            seas_ok = True
+        else:
+            try:
+                seas_ok = int(seas_sel) in get_seasons_from_filename(fname)
+            except ValueError:
+                seas_ok = True
+        if epis_sel == 'any':
+            epis_ok = True
+        else:
+            try:
+                epis_ok = int(epis_sel) in get_episodes_from_filename(fname)
+            except ValueError:
+                epis_ok = True
+        if lang_ok and qual_ok and seas_ok and epis_ok:
+            filtered.append(file)
+    return filtered
+
+
+
 @Client.on_message(filters.private & filters.text & filters.incoming)
 async def pm_search(client, message):
     if message.text.startswith("/"):
@@ -144,20 +254,26 @@ async def next_page(bot, query):
             ]
         )
 
-    lang = "📰 ʟᴀɴɢᴜᴀɢᴇs" if select['lang'] == 'any' else f"✔️ {select['lang'].title()}"
-    qual = "🔍 ǫᴜᴀʟɪᴛʏ" if select['qual'] == 'any' else f"✔️ {select['qual'].title()}"
+    lang = "📰 ʟᴀɴɢᴜᴀɢᴇ" if select.get('lang', 'any') == 'any' else f"✔️ {select['lang'].title()}"
+    qual = "🔍 ǫᴜᴀʟɪᴛʏ" if select.get('qual', 'any') == 'any' else f"✔️ {select['qual'].title()}"
+    seas = "📁 sᴇᴀsᴏɴ" if select.get('season', 'any') == 'any' else f"✔️ Season {select['season']}"
+    epis = "🎬 ᴇᴘɪsᴏᴅᴇ" if select.get('episode', 'any') == 'any' else f"✔️ Episode {select['episode']}"
     btn.insert(0,
                 [InlineKeyboardButton(lang, callback_data=f"languages#{key}#{req}#{offset}"),
                 InlineKeyboardButton(qual, callback_data=f"quality#{key}#{req}#{offset}")]
             )
+    btn.insert(1,
+                [InlineKeyboardButton(seas, callback_data=f"season#{key}#{req}#{offset}"),
+                InlineKeyboardButton(epis, callback_data=f"episode#{key}#{req}#{offset}")]
+            )
 
     if settings['shortlink'] and not await is_premium(query.from_user.id, bot):
-        btn.insert(1,
+        btn.insert(2,
             [InlineKeyboardButton("♻️ sᴇɴᴅ ᴀʟʟ ♻️", url=await get_shortlink(settings['url'], settings['api'], f'https://t.me/{temp.U_NAME}?start=all_{query.message.chat.id}_{key}')),
              InlineKeyboardButton(settings['tutorial_name'], url=settings['tutorial'])]
         )
     else:
-        btn.insert(1,
+        btn.insert(2,
             [InlineKeyboardButton("♻️ sᴇɴᴅ ᴀʟʟ ♻️", callback_data=f"send_all#{key}#{req}"),
              InlineKeyboardButton(settings['tutorial_name'], url=settings['tutorial'])]
         )
@@ -228,19 +344,12 @@ async def pick_lang(client: Client, query: CallbackQuery):
     if not all_files:
         await query.answer(f"Hello {query.from_user.first_name},\nSend New Request Again!", show_alert=True)
         return
+    old_lang = SELECT[key].get('lang', 'any')
     SELECT[key]['lang'] = lang
-    current_qual = SELECT[key].get('qual')
 
-    all_files = ALL_FILES.get(key, [])
-    filtered = []
-    for file in all_files:
-        fname = file.get('file_name', '').lower()
-        lang_ok = lang == 'any' or lang.lower() in fname
-        qual_ok = current_qual == 'any' or current_qual.lower() in fname
-        if lang_ok and qual_ok:
-            filtered.append(file)
-
+    filtered = filter_files(all_files, SELECT[key])
     if not filtered:
+        SELECT[key]['lang'] = old_lang
         await query.answer("sᴏʀʀʏ ɴᴏ ꜰɪʟᴇs ꜰᴏᴜɴᴅ ꜰᴏʀ sᴇʟᴇᴄᴛᴇᴅ ꜰɪʟᴛᴇʀs 😕", show_alert=True)
         return
 
@@ -311,20 +420,182 @@ async def pick_qual(client: Client, query: CallbackQuery):
     if not all_files:
         await query.answer(f"Hello {query.from_user.first_name},\nSend New Request Again!", show_alert=True)
         return
+    old_qual = SELECT[key].get('qual', 'any')
     SELECT[key]['qual'] = qual
-    current_lang = SELECT[key].get('lang')
 
-    all_files = ALL_FILES.get(key, [])
-    filtered = []
-    for file in all_files:
-        fname = file.get('file_name', '').lower()
-        lang_ok = current_lang == 'any' or current_lang.lower() in fname
-        qual_ok = qual == 'any' or qual.lower() in fname
-        if lang_ok and qual_ok:
-            filtered.append(file)
-
+    filtered = filter_files(all_files, SELECT[key])
     if not filtered:
+        SELECT[key]['qual'] = old_qual
         await query.answer("sᴏʀʀʏ ɴᴏ ꜰɪʟᴇs ꜰᴏᴜɴᴅ ꜰᴏʀ sᴇʟᴇᴄᴛᴇᴅ ꜰɪʟᴛᴇʀs 😕", show_alert=True)
+        return
+
+    FILES[key] = filtered
+    temp.GET_ALL_FILES[key] = filtered
+    query.data = f"next_{req}_{key}_0"
+    await next_page(client, query)
+
+
+@Client.on_callback_query(filters.regex(r"^season"))
+async def season_(client: Client, query: CallbackQuery):
+    _, key, req, offset = query.data.split("#")
+    if int(req) != query.from_user.id:
+        return await query.answer(f"Hello {query.from_user.first_name},\nDon't Click Other Results!", show_alert=True)
+    all_files = ALL_FILES.get(key)
+    if not all_files:
+        await query.answer(f"Hello {query.from_user.first_name},\nSend New Request Again!", show_alert=True)
+        return
+
+    available_seasons = set()
+    for file in all_files:
+        fname = file.get('file_name', '')
+        seasons_in_file = get_seasons_from_filename(fname)
+        available_seasons.update(seasons_in_file)
+    available_seasons = sorted(available_seasons)
+
+    if not available_seasons:
+        return await query.answer("⚠️ No Season numbers found in these files!", show_alert=True)
+
+    current_sel = SELECT.get(key, {})
+    seas_sel = current_sel.get('season', 'any')
+
+    any_seas_tick = "✅" if seas_sel == 'any' else "📁"
+    btn = [[InlineKeyboardButton(f"{any_seas_tick} Any Season", callback_data=f"pick_seas#any#{key}#{req}")]]
+
+    pairs = []
+    for i in range(0, len(available_seasons) - 1, 2):
+        s1 = available_seasons[i]
+        s2 = available_seasons[i+1]
+        tick1 = "✅ " if seas_sel == str(s1) else ""
+        tick2 = "✅ " if seas_sel == str(s2) else ""
+        pairs.append([
+            InlineKeyboardButton(text=f"{tick1}Season {s1}", callback_data=f"pick_seas#{s1}#{key}#{req}"),
+            InlineKeyboardButton(text=f"{tick2}Season {s2}", callback_data=f"pick_seas#{s2}#{key}#{req}")
+        ])
+    btn.extend(pairs)
+
+    if len(available_seasons) % 2 != 0:
+        last = available_seasons[-1]
+        tick = "✅ " if seas_sel == str(last) else ""
+        btn.append([InlineKeyboardButton(text=f"{tick}Season {last}", callback_data=f"pick_seas#{last}#{key}#{req}")])
+
+    btn.append([InlineKeyboardButton(text="⪻ ʙᴀᴄᴋ ᴛᴏ ᴍᴀɪɴ ᴘᴀɢᴇ", callback_data=f"next_{req}_{key}_{offset}")])
+    await query.message.edit_text(
+        f"<b>sᴇʟᴇᴄᴛ sᴇᴀsᴏɴ for: {BUTTONS[key]}\n\nsᴇʟᴇᴄᴛ ʜᴇʀᴇ 👇</b>",
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
+        reply_markup=InlineKeyboardMarkup(btn)
+    )
+
+
+@Client.on_callback_query(filters.regex(r"^pick_seas"))
+async def pick_seas(client: Client, query: CallbackQuery):
+    _, seas, key, req = query.data.split("#")
+    if int(req) != query.from_user.id:
+        return await query.answer(f"Hello {query.from_user.first_name},\nDon't Click Other Results!", show_alert=True)
+
+    all_files = ALL_FILES.get(key)
+    if not all_files:
+        await query.answer(f"Hello {query.from_user.first_name},\nSend New Request Again!", show_alert=True)
+        return
+
+    old_seas = SELECT[key].get('season', 'any')
+    old_epis = SELECT[key].get('episode', 'any')
+    
+    SELECT[key]['season'] = seas
+    if old_seas != seas:
+        SELECT[key]['episode'] = 'any'
+
+    filtered = filter_files(all_files, SELECT[key])
+    if not filtered:
+        SELECT[key]['season'] = old_seas
+        SELECT[key]['episode'] = old_epis
+        await query.answer("sᴏʀʀʏ ɴᴏ ꜰɪʟᴇs ꜰᴏᴜɴᴅ ꜰᴏʀ sᴇʟᴇᴄᴛᴇᴅ sᴇᴀsᴏɴ 😕", show_alert=True)
+        return
+
+    FILES[key] = filtered
+    temp.GET_ALL_FILES[key] = filtered
+    query.data = f"next_{req}_{key}_0"
+    await next_page(client, query)
+
+
+@Client.on_callback_query(filters.regex(r"^episode"))
+async def episode_(client: Client, query: CallbackQuery):
+    _, key, req, offset = query.data.split("#")
+    if int(req) != query.from_user.id:
+        return await query.answer(f"Hello {query.from_user.first_name},\nDon't Click Other Results!", show_alert=True)
+    all_files = ALL_FILES.get(key)
+    if not all_files:
+        await query.answer(f"Hello {query.from_user.first_name},\nSend New Request Again!", show_alert=True)
+        return
+
+    current_sel = SELECT.get(key, {})
+    seas_sel = current_sel.get('season', 'any')
+    
+    if seas_sel == 'any':
+        return await query.answer("⚠️ Please select a Season first before selecting an Episode!", show_alert=True)
+
+    available_episodes = set()
+    for file in all_files:
+        fname = file.get('file_name', '')
+        try:
+            if int(seas_sel) in get_seasons_from_filename(fname):
+                episodes_in_file = get_episodes_from_filename(fname)
+                available_episodes.update(episodes_in_file)
+        except ValueError:
+            pass
+            
+    available_episodes = sorted(available_episodes)
+
+    if not available_episodes:
+        return await query.answer(f"⚠️ No Episode numbers found for Season {seas_sel}!", show_alert=True)
+
+    epis_sel = current_sel.get('episode', 'any')
+
+    any_epis_tick = "✅" if epis_sel == 'any' else "🎬"
+    btn = [[InlineKeyboardButton(f"{any_epis_tick} Any Episode", callback_data=f"pick_epis#any#{key}#{req}")]]
+
+    pairs = []
+    for i in range(0, len(available_episodes) - 1, 2):
+        e1 = available_episodes[i]
+        e2 = available_episodes[i+1]
+        tick1 = "✅ " if epis_sel == str(e1) else ""
+        tick2 = "✅ " if epis_sel == str(e2) else ""
+        pairs.append([
+            InlineKeyboardButton(text=f"{tick1}Episode {e1}", callback_data=f"pick_epis#{e1}#{key}#{req}"),
+            InlineKeyboardButton(text=f"{tick2}Episode {e2}", callback_data=f"pick_epis#{e2}#{key}#{req}")
+        ])
+    btn.extend(pairs)
+
+    if len(available_episodes) % 2 != 0:
+        last = available_episodes[-1]
+        tick = "✅ " if epis_sel == str(last) else ""
+        btn.append([InlineKeyboardButton(text=f"{tick}Episode {last}", callback_data=f"pick_epis#{last}#{key}#{req}")])
+
+    btn.append([InlineKeyboardButton(text="⪻ ʙᴀᴄᴋ ᴛᴏ ᴍᴀɪɴ ᴘᴀɢᴇ", callback_data=f"next_{req}_{key}_{offset}")])
+    await query.message.edit_text(
+        f"<b>sᴇʟᴇᴄᴛ ᴇᴘɪsᴏᴅᴇ for Season {seas_sel} of: {BUTTONS[key]}\n\nsᴇʟᴇᴄᴛ ʜᴇʀᴇ 👇</b>",
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
+        reply_markup=InlineKeyboardMarkup(btn)
+    )
+
+
+@Client.on_callback_query(filters.regex(r"^pick_epis"))
+async def pick_epis(client: Client, query: CallbackQuery):
+    _, epis, key, req = query.data.split("#")
+    if int(req) != query.from_user.id:
+        return await query.answer(f"Hello {query.from_user.first_name},\nDon't Click Other Results!", show_alert=True)
+
+    all_files = ALL_FILES.get(key)
+    if not all_files:
+        await query.answer(f"Hello {query.from_user.first_name},\nSend New Request Again!", show_alert=True)
+        return
+
+    old_epis = SELECT[key].get('episode', 'any')
+    SELECT[key]['episode'] = epis
+
+    filtered = filter_files(all_files, SELECT[key])
+    if not filtered:
+        SELECT[key]['episode'] = old_epis
+        await query.answer("sᴏʀʀʏ ɴᴏ ꜰɪʟᴇs ꜰᴏᴜɴᴅ ꜰᴏʀ sᴇʟᴇᴄᴛᴇᴅ ᴇᴘɪsᴏᴅᴇ 😕", show_alert=True)
         return
 
     FILES[key] = filtered
@@ -1206,7 +1477,7 @@ async def auto_filter(client, msg, s, spoll=False):
     req = message.from_user.id if message and message.from_user else 0
     BUTTONS[key] = search
     temp.GET_ALL_FILES[key] = files
-    SELECT[key] = {'lang': 'any', 'qual': 'any'}
+    SELECT[key] = {'lang': 'any', 'qual': 'any', 'season': 'any', 'episode': 'any'}
 
     files_link = ""
     if settings['links']:
@@ -1234,14 +1505,18 @@ async def auto_filter(client, msg, s, spoll=False):
                 [InlineKeyboardButton("📰 ʟᴀɴɢᴜᴀɢᴇs", callback_data=f"languages#{key}#{req}#{offset}"),
                 InlineKeyboardButton("🔍 ǫᴜᴀʟɪᴛʏ", callback_data=f"quality#{key}#{req}#{offset}")]
             )
+    btn.insert(1,
+                [InlineKeyboardButton("📁 sᴇᴀsᴏɴ", callback_data=f"season#{key}#{req}#{offset}"),
+                InlineKeyboardButton("🎬 ᴇᴘɪsᴏᴅᴇ", callback_data=f"episode#{key}#{req}#{offset}")]
+            )
 
     if settings['shortlink'] and not await is_premium(message.from_user.id, client):
-        btn.insert(1,
+        btn.insert(2,
             [InlineKeyboardButton("♻️ sᴇɴᴅ ᴀʟʟ ♻️", url=await get_shortlink(settings['url'], settings['api'], f'https://t.me/{temp.U_NAME}?start=all_{message.chat.id}_{key}')),
              InlineKeyboardButton(settings['tutorial_name'], url=settings['tutorial'])]
         )
     else:
-        btn.insert(1,
+        btn.insert(2,
             [InlineKeyboardButton("♻️ sᴇɴᴅ ᴀʟʟ ♻️", callback_data=f"send_all#{key}#{req}"),
              InlineKeyboardButton(settings['tutorial_name'], url=settings['tutorial'])]
         )
